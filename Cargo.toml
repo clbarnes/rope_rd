@@ -17,4 +17,4 @@ edition = "2021"
 cargo-release = "0.24.11"
 
 [package.metadata.release]
-disable-publish = true
+publish = false
