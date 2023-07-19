@@ -1,4 +1,4 @@
-//! A rope data structure which implements [std::io::Read] and [std::io::Seek] by delegating to its leaf nodes.
+//! A rope data structure which implements [`std::io::Read`] and [`std::io::Seek`] by delegating to its leaf nodes.
 //!
 //! ```rust
 //! use std::io::{Cursor, Read};

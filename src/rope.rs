@@ -1,11 +1,11 @@
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::util::{abs_position, stream_len};
+use crate::util::{abs_position, stream_len, stream_len_fast};
 
-/// Data in a [Node::Leaf], which knows its own width and contains something [Read]/[Seek]able.
+/// Data in a [`Node::Leaf`], which knows its own width and contains something [`Read`]/[`Seek`]able.
 ///
-/// Should not be created directly, but via a [Node].
+/// Should not be created directly, but via a [`Node`].
 pub struct Leaf<F: Read + Seek> {
     width: u64,
     part: F,
@@ -23,9 +23,9 @@ impl<F: Read + Seek> Seek for Leaf<F> {
     }
 }
 
-/// Data in a [Node::Branch], which contains two child [Node]s and knows their widths.
+/// Data in a [`Node::Branch`], which contains two child [`Node`]s and knows their widths.
 ///
-/// Should not be created directly, but via a [Node].
+/// Should not be created directly, but via a [`Node`].
 pub struct Branch<F: Read + Seek> {
     width: u64,
     split: u64,
@@ -62,7 +62,7 @@ impl<F: Read + Seek> Branch<F> {
             }
         } else {
             let pos = pos - self.split;
-            match self.left.as_mut() {
+            match self.right.as_mut() {
                 Node::Leaf(lf) => {
                     lf.seek(SeekFrom::Start(pos)).unwrap();
                 }
@@ -116,13 +116,22 @@ pub enum Node<F: Read + Seek> {
 }
 
 impl<F: Read + Seek> Node<F> {
-    /// Create a leaf node with a given [Read]/[Seek]able.
+    /// Create a leaf node with a given [`Read`]/[`Seek`]able.
+    ///
+    /// Requires 2 seek operations:
+    /// [`Node::leaf_with_length`] is much more efficient
+    /// unless seeks are very fast (e.g. in-memory).
+    ///
+    /// Leaf will be seeked to the start.
     pub fn leaf(mut part: F) -> io::Result<Self> {
-        let width = stream_len(&mut part)?;
+        let width = stream_len_fast(&mut part)?;
+        part.seek(SeekFrom::Start(0))?;
         Ok(Self::leaf_with_length(part, width))
     }
 
     /// Create a leaf with a known length.
+    ///
+    /// Leaf should already be seeked to the start.
     pub fn leaf_with_length(part: F, length: u64) -> Self {
         Self::Leaf(Leaf {
             width: length,
@@ -135,9 +144,9 @@ impl<F: Read + Seek> Node<F> {
         Self::Branch(Branch::new(left, right))
     }
 
-    /// Create a rope from a [Vec] of `(start, item)` pairs.
+    /// Create a rope from a [`Vec`] of `(start, item)` pairs.
     ///
-    /// Items must be [Read]/[Seek]able, sorted, and consecutive (one starts where the previous ends, or at 0 if it's first).
+    /// Items must be [`Read`]/[`Seek`]able, sorted, and consecutive (one starts where the previous ends, or at 0 if it's first).
     /// The rope will be organised to partition the full length of the stream as well as possible, to optimise random seeks.
     ///
     /// Panics when given zero parts.
@@ -178,14 +187,16 @@ impl<F: Read + Seek> Node<F> {
         }
     }
 
-    /// Create a rope from a [Vec] of items.
+    /// Create a rope from a [`Vec`] of items.
     ///
-    /// Items must be [Read]/[Seek]able.
+    /// Items must be [`Read`]/[`Seek`]able.
     /// The rope will be organised to partition the full length of the stream as well as possible, to optimise random seeks.
     ///
     /// Item lengths will be determined by their stream length,
     /// which takes multiple seeks to compute.
-    /// If you know their offsets already, use [Node::partition_with_starts].
+    /// If you know their offsets already, use [`Node::partition_with_starts`].
+    ///
+    /// Raises an error when given zero parts.
     pub fn partition(mut parts: Vec<F>) -> io::Result<Self> {
         match parts.len() {
             0 => Err(io::Error::new(io::ErrorKind::Other, "empty partition")),

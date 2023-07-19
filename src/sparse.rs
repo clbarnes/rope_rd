@@ -1,13 +1,16 @@
 //! Utilities for interspersing real data with filler bytes.
 //!
-//! The [Spacer] represents these filler bytes.
-//! The [Part] represents something which can either be real data or a [Spacer].
+//! The [`Spacer`] represents these filler bytes.
+//! The [`Part`] represents something which can either be real data or a [`Spacer`].
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::util::abs_position;
+use crate::Node;
 
-/// [Read]able, [Seek]able [Iterator] with a given length and fill value.
+/// [`Read`]able, [`Seek`]able [`Iterator`] with a given length and fill value.
+///
+/// Implements [`Into`] for [`Node`](crate::Node)s.
 pub struct Spacer {
     length: u64,
     fill: u8,
@@ -75,8 +78,10 @@ impl Seek for Spacer {
 
 /// Enum representing part of a readable which may be full or empty.
 ///
-/// If empty, it is filled by a [Spacer];
-/// if full, by some other [Read] & [Seek]able.
+/// If empty, it is filled by a [`Spacer`];
+/// if full, by some other [`Read`] & [`Seek`]able.
+///
+/// Implements [`TryInto`] for [`Node`](crate::Node)s.
 pub enum Part<F: Read + Seek> {
     Full(F),
     Empty(Spacer),
@@ -85,12 +90,12 @@ pub enum Part<F: Read + Seek> {
 impl<F: Read + Seek> Part<F> {
     /// Create an empty part with the given length and the default fill.
     pub fn empty(length: u64) -> Self {
-        Self::Empty(Spacer::new(length))
+        Spacer::new(length).into()
     }
 
     /// Create an empty part with the given length and fill.
     pub fn empty_with_fill(length: u64, fill: u8) -> Self {
-        Self::Empty(Spacer::with_fill(length, fill))
+        Spacer::with_fill(length, fill).into()
     }
 }
 
@@ -109,6 +114,27 @@ impl<F: Read + Seek> Seek for Part<F> {
             Part::Full(s) => s.seek(pos),
             Part::Empty(s) => s.seek(pos),
         }
+    }
+}
+
+impl<F: Read + Seek> Into<Part<F>> for Spacer {
+    fn into(self) -> Part<F> {
+        Part::Empty(self)
+    }
+}
+
+impl<F: Read + Seek> TryInto<Node<Part<F>>> for Part<F> {
+    fn try_into(self) -> Result<Node<Part<F>>, Self::Error> {
+        Node::leaf(self)
+    }
+
+    type Error = io::Error;
+}
+
+impl<F: Read + Seek> Into<Node<Part<F>>> for Spacer {
+    fn into(self) -> Node<Part<F>> {
+        let len = self.length;
+        Node::leaf_with_length(self.into(), len)
     }
 }
 

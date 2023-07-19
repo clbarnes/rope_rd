@@ -7,7 +7,7 @@ use std::{
 
 /// Given the current absolute position and the length of the stream, determine the absolute position of a given possibly-relative seek.
 ///
-/// Like [Seek], fails if the seed would be before the start of the stream,
+/// Like [`Seek`], fails if the seed would be before the start of the stream,
 /// but allows seeks after the end.
 pub fn abs_position(curr_position: u64, length: u64, seek: SeekFrom) -> io::Result<u64> {
     let out = match seek {
