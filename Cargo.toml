@@ -1,6 +1,6 @@
 [package]
 name = "rope_rd"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Chris L. Barnes <chrislloydbarnes@gmail.com>"]
 description = "A Read/Seek rope implementation"
 repository = "https://github.com/clbarnes/rope_rd"
