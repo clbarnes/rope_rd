@@ -3,9 +3,9 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::util::{abs_position, stream_len};
 
-/// Data in a [Node::Leaf], which knows its own width and contains a [Read]/[Seek]able.
+/// Data in a [Node::Leaf], which knows its own width and contains something [Read]/[Seek]able.
 ///
-/// Should be created via a [Node].
+/// Should not be created directly, but via a [Node].
 pub struct Leaf<F: Read + Seek> {
     width: u64,
     part: F,
@@ -23,7 +23,9 @@ impl<F: Read + Seek> Seek for Leaf<F> {
     }
 }
 
-/// Data in a [Node::Leaf], which knows its own width and contains a [Read]/[Seek]able.
+/// Data in a [Node::Branch], which contains two child [Node]s and knows their widths.
+///
+/// Should not be created directly, but via a [Node].
 pub struct Branch<F: Read + Seek> {
     width: u64,
     split: u64,
@@ -33,18 +35,13 @@ pub struct Branch<F: Read + Seek> {
 }
 
 impl<F: Read + Seek> Branch<F> {
-    pub fn new(left: Node<F>, right: Node<F>) -> Self {
+    fn new(left: Node<F>, right: Node<F>) -> Self {
         let lwid = left.width();
         let rwid = right.width();
         Self::new_with_widths(left, lwid, right, rwid)
     }
 
-    pub fn new_with_widths(
-        left: Node<F>,
-        left_width: u64,
-        right: Node<F>,
-        right_width: u64,
-    ) -> Self {
+    fn new_with_widths(left: Node<F>, left_width: u64, right: Node<F>, right_width: u64) -> Self {
         Self {
             left: Box::new(left),
             split: left_width,

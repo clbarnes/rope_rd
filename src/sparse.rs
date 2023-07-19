@@ -1,4 +1,7 @@
 //! Utilities for interspersing real data with filler bytes.
+//!
+//! The [Spacer] represents these filler bytes.
+//! The [Part] represents something which can either be real data or a [Spacer].
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
