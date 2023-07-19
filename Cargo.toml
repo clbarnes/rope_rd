@@ -1,6 +1,12 @@
 [package]
 name = "rope_rd"
 version = "0.1.0"
+authors = ["Chris L. Barnes <chrislloydbarnes@gmail.com>"]
+description = "A Read/Seek rope implementation"
+repository = "https://github.com/clbarnes/rope_rd"
+license = "MIT"
+keywords = ["rope", "sparse", "read", "seek", "io"]
+categories = ["algorithms", "data-structures", "compression"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
