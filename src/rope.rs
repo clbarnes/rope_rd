@@ -122,10 +122,11 @@ impl<F: Read + Seek> Node<F> {
     /// Create a leaf node with a given [Read]/[Seek]able.
     pub fn leaf(mut part: F) -> io::Result<Self> {
         let width = stream_len(&mut part)?;
-        Ok(Self::new_leaf_with_length(part, width))
+        Ok(Self::leaf_with_length(part, width))
     }
 
-    pub fn new_leaf_with_length(part: F, length: u64) -> Self {
+    /// Create a leaf with a known length.
+    pub fn leaf_with_length(part: F, length: u64) -> Self {
         Self::Leaf(Leaf {
             width: length,
             part,
@@ -146,13 +147,13 @@ impl<F: Read + Seek> Node<F> {
     pub fn partition_with_starts(mut start_parts: Vec<(u64, F)>, total_length: u64) -> Self {
         match start_parts.len() {
             0 => panic!("Empty partition"),
-            1 => Self::new_leaf_with_length(start_parts.pop().unwrap().1, total_length),
+            1 => Self::leaf_with_length(start_parts.pop().unwrap().1, total_length),
             2 => {
                 let r_pair = start_parts.pop().unwrap();
                 let l_pair = start_parts.pop().unwrap();
 
-                let left = Self::new_leaf_with_length(l_pair.1, r_pair.0);
-                let right = Self::new_leaf_with_length(r_pair.1, total_length - r_pair.0);
+                let left = Self::leaf_with_length(l_pair.1, r_pair.0);
+                let right = Self::leaf_with_length(r_pair.1, total_length - r_pair.0);
                 Self::branch(left, right)
             }
             n => {
