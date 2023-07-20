@@ -128,9 +128,9 @@ impl<F: Read + Seek> Seek for Part<F> {
     }
 }
 
-impl<F: Read + Seek> Into<Part<F>> for Spacer {
-    fn into(self) -> Part<F> {
-        Part::Empty(self)
+impl<F: Read + Seek> From<Spacer> for Part<F> {
+    fn from(val: Spacer) -> Self {
+        Part::Empty(val)
     }
 }
 
@@ -142,10 +142,10 @@ impl<F: Read + Seek> TryInto<Node<Part<F>>> for Part<F> {
     type Error = io::Error;
 }
 
-impl<F: Read + Seek> Into<Node<Part<F>>> for Spacer {
-    fn into(self) -> Node<Part<F>> {
-        let len = self.length;
-        Node::leaf_with_length(self.into(), len)
+impl<F: Read + Seek> From<Spacer> for Node<Part<F>> {
+    fn from(val: Spacer) -> Self {
+        let len = val.length;
+        Node::leaf_with_length(val.into(), len)
     }
 }
 
