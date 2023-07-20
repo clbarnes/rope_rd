@@ -2,6 +2,7 @@
 //!
 //! The [`Spacer`] represents these filler bytes.
 //! The [`Part`] represents something which can either be real data or a [`Spacer`].
+use std::fmt::Debug;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -11,6 +12,7 @@ use crate::Node;
 /// [`Read`]able, [`Seek`]able [`Iterator`] with a given length and fill value.
 ///
 /// Implements [`Into`] for [`Node`](crate::Node)s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Spacer {
     length: u64,
     fill: u8,
@@ -85,6 +87,15 @@ impl Seek for Spacer {
 pub enum Part<F: Read + Seek> {
     Full(F),
     Empty(Spacer),
+}
+
+impl<F: Read + Seek + Debug> Debug for Part<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Full(arg0) => f.debug_tuple("Full").field(arg0).finish(),
+            Self::Empty(arg0) => f.debug_tuple("Empty").field(arg0).finish(),
+        }
+    }
 }
 
 impl<F: Read + Seek> Part<F> {

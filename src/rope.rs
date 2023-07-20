@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -9,6 +10,15 @@ use crate::util::{abs_position, stream_len, stream_len_fast};
 pub struct Leaf<F: Read + Seek> {
     width: u64,
     part: F,
+}
+
+impl<F: Read + Seek + Debug> Debug for Leaf<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Leaf")
+            .field("width", &self.width)
+            .field("part", &self.part)
+            .finish()
+    }
 }
 
 impl<F: Read + Seek> Read for Leaf<F> {
@@ -32,6 +42,18 @@ pub struct Branch<F: Read + Seek> {
     left: Box<Node<F>>,
     right: Box<Node<F>>,
     position: u64,
+}
+
+impl<F: Read + Seek + Debug> Debug for Branch<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Branch")
+            .field("width", &self.width)
+            .field("split", &self.split)
+            .field("left", &self.left)
+            .field("right", &self.right)
+            .field("position", &self.position)
+            .finish()
+    }
 }
 
 impl<F: Read + Seek> Branch<F> {
@@ -113,6 +135,15 @@ impl<F: Read + Seek> Seek for Branch<F> {
 pub enum Node<F: Read + Seek> {
     Leaf(Leaf<F>),
     Branch(Branch<F>),
+}
+
+impl<F: Read + Seek + Debug> Debug for Node<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Leaf(arg0) => f.debug_tuple("Leaf").field(arg0).finish(),
+            Self::Branch(arg0) => f.debug_tuple("Branch").field(arg0).finish(),
+        }
+    }
 }
 
 impl<F: Read + Seek> Node<F> {
