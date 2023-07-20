@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::util::{abs_position, stream_len, stream_len_fast};
+use crate::util::{abs_position, stream_len_fast};
 
 /// Data in a [`Node::Leaf`], which knows its own width and contains something [`Read`]/[`Seek`]able.
 ///
@@ -81,6 +81,7 @@ impl<F: Read + Seek> Branch<F> {
                     lf.seek(SeekFrom::Start(pos)).unwrap();
                 }
                 Node::Branch(b) => b.set_position(pos),
+                Node::Null => (),
             }
         } else {
             let pos = pos - self.split;
@@ -89,6 +90,7 @@ impl<F: Read + Seek> Branch<F> {
                     lf.seek(SeekFrom::Start(pos)).unwrap();
                 }
                 Node::Branch(b) => b.set_position(pos),
+                Node::Null => (),
             }
         }
     }
@@ -135,6 +137,7 @@ impl<F: Read + Seek> Seek for Branch<F> {
 pub enum Node<F: Read + Seek> {
     Leaf(Leaf<F>),
     Branch(Branch<F>),
+    Null,
 }
 
 impl<F: Read + Seek + Debug> Debug for Node<F> {
@@ -142,11 +145,21 @@ impl<F: Read + Seek + Debug> Debug for Node<F> {
         match self {
             Self::Leaf(arg0) => f.debug_tuple("Leaf").field(arg0).finish(),
             Self::Branch(arg0) => f.debug_tuple("Branch").field(arg0).finish(),
+            Self::Null => write!(f, "Empty"),
         }
     }
 }
 
 impl<F: Read + Seek> Node<F> {
+    /// Get the width of the node (number of bytes).
+    fn width(&self) -> u64 {
+        match self {
+            Node::Leaf(n) => n.width,
+            Node::Branch(n) => n.width,
+            Node::Null => 0,
+        }
+    }
+
     /// Create a leaf node with a given [`Read`]/[`Seek`]able.
     ///
     /// Requires 2 seek operations:
@@ -175,45 +188,40 @@ impl<F: Read + Seek> Node<F> {
         Self::Branch(Branch::new(left, right))
     }
 
-    /// Create a rope from a [`Vec`] of `(start, item)` pairs.
+    /// Create a rope from a [`Vec<Node>`].
     ///
-    /// Items must be [`Read`]/[`Seek`]able, sorted, and consecutive (one starts where the previous ends, or at 0 if it's first).
+    /// Nodes are expected to be sorted and consecutive.
     /// The rope will be organised to partition the full length of the stream as well as possible, to optimise random seeks.
-    ///
-    /// Panics when given zero parts.
-    pub fn partition_with_starts(mut start_parts: Vec<(u64, F)>, total_length: u64) -> Self {
-        match start_parts.len() {
-            0 => panic!("Empty partition"),
-            1 => Self::leaf_with_length(start_parts.pop().unwrap().1, total_length),
+    pub fn partition_nodes(mut nodes: Vec<Self>) -> Self {
+        match nodes.len() {
+            0 => Self::Null,
+            1 => nodes.pop().unwrap(),
             2 => {
-                let r_pair = start_parts.pop().unwrap();
-                let l_pair = start_parts.pop().unwrap();
-
-                let left = Self::leaf_with_length(l_pair.1, r_pair.0);
-                let right = Self::leaf_with_length(r_pair.1, total_length - r_pair.0);
-                Self::branch(left, right)
+                let mut it = nodes.into_iter();
+                Self::branch(it.next().unwrap(), it.next().unwrap())
             }
             n => {
-                let split_goal = total_length / 2;
-                let mut total = 0;
-                let mut idx = 1;
-                for (start, _) in start_parts.iter() {
-                    total += start;
-                    if total > split_goal {
-                        break;
-                    }
-                    idx += 1;
-                }
-                // ensure that neither side has 0 parts
-                idx = idx.clamp(1, n - 1);
+                let mut cumu = Vec::with_capacity(nodes.len() + 1);
+                cumu.push(0);
+                let cumu = nodes.iter().fold(cumu, |mut accum, el| {
+                    accum.push(el.width());
+                    accum
+                });
+                let split_goal = cumu.last().unwrap() / 2;
+                let mut split_idx = match cumu.binary_search(&split_goal) {
+                    // exactly on the boundary, keep this split
+                    Ok(idx) => idx,
+                    // idx comes under the boundary, so take the next one
+                    Err(idx) => idx + 1,
+                };
+                // because indices are left-inclusive, we don't need to transform to nodes vec (fences) to cumu vec (fenceposts)
 
-                let right = start_parts.split_off(idx);
-                let initial = right[0].0;
-                let new_right = right.into_iter().map(|(st, p)| (st - initial, p)).collect();
-                Self::branch(
-                    Self::partition_with_starts(start_parts, initial),
-                    Self::partition_with_starts(new_right, total_length - initial),
-                )
+                // don't want one partition to have 0 nodes in it
+                split_idx = split_idx.clamp(1, n - 1);
+
+                let right = nodes.split_off(split_idx);
+
+                Self::branch(Self::partition_nodes(nodes), Self::partition_nodes(right))
             }
         }
     }
@@ -223,31 +231,14 @@ impl<F: Read + Seek> Node<F> {
     /// Items must be [`Read`]/[`Seek`]able.
     /// The rope will be organised to partition the full length of the stream as well as possible, to optimise random seeks.
     ///
-    /// Item lengths will be determined by their stream length,
+    /// Item widths will be determined by their stream length,
     /// which takes multiple seeks to compute.
-    /// If you know their offsets already, use [`Node::partition_with_starts`].
+    /// If you know their widths already, convert them into (leaf) [`Node`]s and use [`Node::partition_nodes`].
     ///
-    /// Raises an error when given zero parts.
-    pub fn partition(mut parts: Vec<F>) -> io::Result<Self> {
-        match parts.len() {
-            0 => Err(io::Error::new(io::ErrorKind::Other, "empty partition")),
-            1 => Self::leaf(parts.pop().unwrap()),
-            2 => {
-                let right = Self::leaf(parts.pop().unwrap())?;
-                let left = Self::leaf(parts.pop().unwrap())?;
-                Ok(Self::branch(left, right))
-            }
-            _ => {
-                let mut total = 0;
-                let mut len_parts = Vec::with_capacity(parts.len());
-                for mut part in parts {
-                    let start = total;
-                    total += stream_len(&mut part)?;
-                    len_parts.push((start, part));
-                }
-                Ok(Self::partition_with_starts(len_parts, total))
-            }
-        }
+    /// Raises an error when given zero parts, or when node length cannot be determined from stream.
+    pub fn partition(parts: Vec<F>) -> io::Result<Self> {
+        let nodes_res: Result<Vec<Node<F>>, _> = parts.into_iter().map(|p| Self::leaf(p)).collect();
+        nodes_res.map(|n| Self::partition_nodes(n))
     }
 }
 
@@ -268,6 +259,7 @@ impl<F: Read + Seek> Read for Node<F> {
         match self {
             Node::Leaf(lf) => lf.read(buf),
             Node::Branch(b) => b.read(buf),
+            Node::Null => Ok(0),
         }
     }
 }
@@ -277,6 +269,7 @@ impl<F: Read + Seek> Seek for Node<F> {
         match self {
             Node::Leaf(lf) => lf.stream_position(),
             Node::Branch(b) => b.stream_position(),
+            Node::Null => Ok(0),
         }
     }
 
@@ -284,15 +277,10 @@ impl<F: Read + Seek> Seek for Node<F> {
         match self {
             Node::Leaf(lf) => lf.seek(pos),
             Node::Branch(b) => b.seek(pos),
-        }
-    }
-}
-
-impl<F: Read + Seek> Node<F> {
-    fn width(&self) -> u64 {
-        match self {
-            Node::Leaf(n) => n.width,
-            Node::Branch(n) => n.width,
+            Node::Null => {
+                abs_position(0, 0, pos)?;
+                Ok(0)
+            }
         }
     }
 }
